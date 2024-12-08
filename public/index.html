@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Jupiter DCA Monitor</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        
+        .ticker-container {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+            overflow: hidden;
+            position: relative;
+            width: 100%;
+        }
+
+        .token-summary {
+            display: inline-flex;
+            gap: 30px;
+            animation: scroll 120s linear infinite;
+            padding-right: 0;
+        }
+
+        .token-summary:hover {
+            animation-play-state: paused;
+        }
+
+        @keyframes scroll {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-50%); }
+        }
+
+        .token-block {
+            display: inline-block;
+            padding: 0 15px;
+            border-right: 1px solid #eee;
+            line-height: 1.4;
+            font-size: 0.9em;
+            min-width: 200px;
+            white-space: nowrap;
+        }
+
+        .token-block:last-child {
+            border-right: none;
+        }
+
+        .token-block strong {
+            color: #333;
+            font-size: 1.1em;
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        .messages-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .message-column {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .token-header {
+            background: #f8f9fa;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+            white-space: pre-wrap;
+        }
+
+        .message {
+            background: #f8f9fa;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 4px;
+            white-space: pre-wrap;
+        }
+
+        h2 {
+            color: #333;
+            margin-top: 0;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #eee;
+        }
+
+        .message a {
+            color: #0066cc;
+            text-decoration: none;
+        }
+
+        .message a:hover {
+            text-decoration: underline;
+        }
+
+        .filter-buttons {
+            margin-bottom: 15px;
+            display: flex;
+            gap: 10px;
+        }
+
+        .filter-button {
+            padding: 8px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            background: #f0f0f0;
+            color: #333;
+        }
+
+        .filter-button.active {
+            background: #0066cc;
+            color: white;
+        }
+
+        .filter-button:hover {
+            opacity: 0.9;
+        }
+    </style>
+</head>
+<body>
+    <h1>Jupiter DCA Monitor</h1>
+    
+    <div class="ticker-container">
+        <div id="summary" class="token-summary"></div>
+    </div>
+
+    <div class="messages-container">
+        <div class="message-column">
+            <h2>LOGOS Messages</h2>
+            <div id="logos-summary" class="token-header"></div>
+            <div class="filter-buttons">
+                <button class="filter-button active" onclick="setFilter('LOGOS', 'ALL')">ALL</button>
+                <button class="filter-button" onclick="setFilter('LOGOS', 'BUY')">BUY</button>
+                <button class="filter-button" onclick="setFilter('LOGOS', 'SELL')">SELL</button>
+            </div>
+            <div id="logos-messages"></div>
+        </div>
+        <div class="message-column">
+            <h2>CHAOS Messages</h2>
+            <div id="chaos-summary" class="token-header"></div>
+            <div class="filter-buttons">
+                <button class="filter-button active" onclick="setFilter('CHAOS', 'ALL')">ALL</button>
+                <button class="filter-button" onclick="setFilter('CHAOS', 'BUY')">BUY</button>
+                <button class="filter-button" onclick="setFilter('CHAOS', 'SELL')">SELL</button>
+            </div>
+            <div id="chaos-messages"></div>
+        </div>
+    </div>
+
+    <script>
+        let currentFilters = {
+            'LOGOS': 'ALL',
+            'CHAOS': 'ALL'
+        };
+
+        function setFilter(token, filter) {
+            currentFilters[token] = filter;
+            
+            // Update button states
+            const buttons = document.querySelectorAll(`.message-column:has(h2:contains('${token}')) .filter-button`);
+            buttons.forEach(button => {
+                button.classList.toggle('active', button.textContent === filter);
+            });
+            
+            // Refresh the messages
+            updateData();
+        }
+
+        function formatSummary(summaryText) {
+            const lines = summaryText.split('\n');
+            const tokenBlocks = new Map();
+            let currentToken = '';
+            let currentBlock = '';
+            
+            // Parse the summary text
+            lines.forEach(line => {
+                if (line.endsWith(':')) {
+                    if (currentToken && currentBlock) {
+                        tokenBlocks.set(currentToken, currentBlock);
+                    }
+                    currentToken = line.slice(0, -1);
+                    currentBlock = '';
+                } else if (line.trim() === '') {
+                    if (currentToken && currentBlock) {
+                        tokenBlocks.set(currentToken, currentBlock);
+                    }
+                    currentToken = '';
+                    currentBlock = '';
+                } else if (currentBlock !== undefined) {
+                    currentBlock += line + '\n';
+                }
+            });
+
+            // Store LOGOS and CHAOS summaries separately
+            if (tokenBlocks.has('LOGOS')) {
+                document.getElementById('logos-summary').innerText = 'LOGOS:\n' + tokenBlocks.get('LOGOS');
+                tokenBlocks.delete('LOGOS');
+            }
+            if (tokenBlocks.has('CHAOS')) {
+                document.getElementById('chaos-summary').innerText = 'CHAOS:\n' + tokenBlocks.get('CHAOS');
+                tokenBlocks.delete('CHAOS');
+            }
+
+            // Format remaining tokens for ticker
+            let html = '';
+            tokenBlocks.forEach((block, token) => {
+                const lines = block.split('\n').filter(line => line.trim());
+                html += `
+                    <div class="token-block">
+                        <strong>${token}</strong><br>
+                        ${lines.join('<br>')}
+                    </div>`;
+            });
+
+            // Triple the content for smoother infinite scroll
+            return html + html + html;
+        }
+
+        function formatMessage(message) {
+            // Convert solscan links to clickable links
+            return message.replace(
+                /(Position:\s*)(https:\/\/solscan\.io\/account\/[a-zA-Z0-9]+)/g,
+                '$1<a href="$2" target="_blank">$2</a>'
+            );
+        }
+
+        function filterMessages(messages, token) {
+            return messages
+                .filter(msg => {
+                    const isTokenMessage = msg.includes(`${token} DCA Position`);
+                    if (!isTokenMessage) return false;
+
+                    const filter = currentFilters[token];
+                    if (filter === 'ALL') return true;
+                    if (filter === 'BUY') return msg.includes('(Buying');
+                    if (filter === 'SELL') return msg.includes('(Selling');
+                    return true;
+                })
+                .map(msg => `<div class="message">${formatMessage(msg)}</div>`)
+                .join('');
+        }
+
+        let updateInterval = 15000; // 15 seconds
+        let consecutiveErrors = 0;
+        let maxInterval = 60000; // Max 1 minute between updates
+
+        async function updateData() {
+            try {
+                // Get messages
+                const messagesResponse = await fetch('/api/telegram-messages');
+                const messages = await messagesResponse.json();
+                
+                // Split messages by token
+                document.getElementById('logos-messages').innerHTML = filterMessages(messages, 'LOGOS');
+                document.getElementById('chaos-messages').innerHTML = filterMessages(messages, 'CHAOS');
+
+                // Get and format summary
+                const summaryResponse = await fetch('/api/summary');
+                const summary = await summaryResponse.json();
+                
+                // Update ticker and summaries
+                document.getElementById('summary').innerHTML = formatSummary(summary);
+                
+                // Clear and update token summaries
+                document.getElementById('logos-summary').innerHTML = '';
+                document.getElementById('chaos-summary').innerHTML = '';
+                if (summary.includes('LOGOS:')) {
+                    document.getElementById('logos-summary').innerText = 'LOGOS:\n' + 
+                        summary.split('LOGOS:')[1].split('\n\n')[0];
+                }
+                if (summary.includes('CHAOS:')) {
+                    document.getElementById('chaos-summary').innerText = 'CHAOS:\n' + 
+                        summary.split('CHAOS:')[1].split('\n\n')[0];
+                }
+
+                // Reset error count on successful update
+                consecutiveErrors = 0;
+                updateInterval = 15000; // Reset to default interval
+
+            } catch (error) {
+                console.error('Error fetching data:', error);
+                consecutiveErrors++;
+                
+                // Exponential backoff
+                updateInterval = Math.min(updateInterval * 1.5, maxInterval);
+                console.log(`Increasing update interval to ${updateInterval}ms`);
+            }
+
+            // Schedule next update
+            setTimeout(updateData, updateInterval);
+        }
+
+        // Initial update
+        updateData();
+    </script>
+</body>
+</html>

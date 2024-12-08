@@ -7,14 +7,9 @@ interface TelegramResponse {
 
 export class TelegramService {
     private readonly baseUrl: string;
-    private messageHandlers: ((message: string) => void)[] = [];
     
     constructor() {
         this.baseUrl = `https://api.telegram.org/bot${config.telegram.botToken}`;
-    }
-
-    onMessage(handler: (message: string) => void) {
-        this.messageHandlers.push(handler);
     }
 
     async sendAlert(message: string): Promise<boolean> {
@@ -24,9 +19,6 @@ export class TelegramService {
                 text: message,
                 parse_mode: 'HTML'
             });
-            
-            // Notify handlers of new message
-            this.messageHandlers.forEach(handler => handler(message));
             
             return response.data.ok;
         } catch (error) {

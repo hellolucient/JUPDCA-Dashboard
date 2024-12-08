@@ -5,7 +5,6 @@ import { TelegramService } from './telegram';
 import BN from 'bn.js';
 import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import axios from 'axios';
-import { WebServer } from './server';
 
 // First cast to unknown, then to our type
 type ProgramDCAAccount = {
@@ -39,13 +38,6 @@ interface SolscanTokenResponse {
         symbol: string;
         decimals: string | number;
     };
-}
-
-interface TokenSummary {
-    buyPositions: number;
-    sellPositions: number;
-    totalBuyVolume: BN;
-    totalSellVolume: BN;
 }
 
 export class JupiterMonitor {
@@ -93,44 +85,10 @@ export class JupiterMonitor {
         'kinXdEcpDQeHPEuQnqmUgtYykqKGVFq6CeVX5iAHJq6': { symbol: 'KIN', decimals: 5 }
     };
 
-    // Add list of monitored tokens for summary
-    private readonly MONITORED_TOKENS = [
-        // Our primary tokens
-        'HJUfqXoYjC653f2p33i84zdCC3jc4EuVnbruSe5kpump', // LOGOS
-        '8SgNwESovnbG1oNEaPVhg6CR9mTMSK7jPvcYRe3wpump', // CHAOS
-        
-        // Major tokens
-        'So11111111111111111111111111111111111111112',   // SOL
-        'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', // USDC
-        'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB', // USDT
-        'mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So', // mSOL
-        'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263', // BONK
-        'JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN', // JUP
-        'WENWENvqqNya429ubCdR81ZmD69brwQaaBYY6p3LCpk', // WEN
-        'bSo13r4TkiE4KumL71LsHTPpL2euBYLFx6h9HP3piy1', // bSOL
-        'jSoLgEP7hmg2Mz9sEK9kGHBkxXbfKqZgHhVGDpE5tE1', // jitoSOL
-        '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU', // SAMO
-        'RaydiumcNj6R7RQpzvp4LHvpqoVgp9GFpKCAU1jqUgb', // RAY
-        'DUSTawucrTsGU8hcqRdHDCbuYhCPADMLM2VcCb8VnFnQ', // DUST
-        'HAWKvTK8PtJ9mYHvEbz5AWpVBWRpQQpekJrBfBrbpBk6', // HAWK
-        'orcaEKTdK7LKz57vaAYr9QeNsVEPfiu6QeMU1kektZE', // ORCA
-        'MNDEFzGvMt87ueuHvVU9VcTqsAP5b3fTGPsHuuPA5ey', // MNDE
-        'HxhWkVpk5NS4Ltg5nij2G671CKXFRKM8Sk9QfF6MFeqo', // HXRO
-        'kinXdEcpDQeHPEuQnqmUgtYykqKGVFq6CeVX5iAHJq6', // KIN
-        'RLBxxFkseAZ4RgJH3Sqn8jXxhmGoz9jWxDNJMh8pL7a'  // RLBB
-    ].map(addr => new PublicKey(addr));
-
-    constructor(private readonly webServer?: WebServer) {
+    constructor() {
         this.connection = new Connection(config.solana.rpcEndpoint);
         this.telegram = new TelegramService();
         this.dca = new DCA(this.connection);
-
-        // Forward telegram messages to web interface
-        if (webServer) {
-            this.telegram.onMessage((message) => {
-                webServer.updateMessages(message);
-            });
-        }
     }
 
     async start() {
@@ -182,18 +140,58 @@ export class JupiterMonitor {
     private async getTokenInfo(mintAddress: PublicKey): Promise<{ symbol: string, decimals: number }> {
         const address = mintAddress.toString();
         
-        // First check our TOKEN_INFO mapping
         if (this.TOKEN_INFO[address]) {
             return this.TOKEN_INFO[address];
         }
 
-        // If it's not in our TOKEN_INFO, we'll ignore it
-        // This way we only track our monitored tokens
-        const shortAddr = `${address.slice(0, 4)}...${address.slice(-4)}`;
-        return { 
-            symbol: `Unknown (${shortAddr})`,
-            decimals: 9
-        };
+        try {
+            const response = await axios.get<SolscanTokenResponse>(
+                `https://api.solscan.io/token/meta?token=${address}`,
+                {
+                    headers: {
+                        'Accept': 'application/json',
+                        'User-Agent': 'Mozilla/5.0'
+                    }
+                }
+            );
+
+            if (response.data?.data?.symbol && response.data?.data?.decimals !== undefined) {
+                const tokenInfo = {
+                    symbol: response.data.data.symbol,
+                    decimals: typeof response.data.data.decimals === 'string' 
+                        ? parseInt(response.data.data.decimals)
+                        : response.data.data.decimals
+                };
+                
+                this.TOKEN_INFO[address] = tokenInfo;
+                return tokenInfo;
+            }
+
+            // Fallback to token account info for decimals
+            const tokenInfo = await this.connection.getParsedAccountInfo(mintAddress);
+            if (
+                tokenInfo.value?.data && 
+                'parsed' in tokenInfo.value.data && 
+                'info' in tokenInfo.value.data.parsed &&
+                'decimals' in tokenInfo.value.data.parsed.info
+            ) {
+                return {
+                    symbol: `Unknown (${address.slice(0, 4)}...${address.slice(-4)})`,
+                    decimals: tokenInfo.value.data.parsed.info.decimals
+                };
+            }
+
+            return { 
+                symbol: `Unknown (${address.slice(0, 4)}...${address.slice(-4)})`,
+                decimals: 9
+            };
+        } catch (error) {
+            console.error(`Error fetching token info for ${address}:`, error);
+            return { 
+                symbol: `Unknown (${address.slice(0, 4)}...${address.slice(-4)})`,
+                decimals: 9
+            };
+        }
     }
 
     private async formatTokenAmount(amount: BN, mintAddress: PublicKey): Promise<string> {
@@ -211,45 +209,27 @@ export class JupiterMonitor {
 
     private async pollDcaPositions() {
         let lastKnownPositions = new Map<string, ProgramDCAAccount>();
-        let lastSummaryTime = 0;
-        const SUMMARY_INTERVAL = 3600000; // 1 hour in milliseconds
 
         while (this.isRunning) {
             try {
+                // Get all DCA positions
                 const allDcaAccounts = (await this.dca.getAll()) as ProgramDCAAccount[];
                 console.log(`Found ${allDcaAccounts.length} total DCA positions`);
 
-                // First filter for all monitored tokens
-                const monitoredPositions = allDcaAccounts.filter(pos => 
-                    this.MONITORED_TOKENS.some(token => 
-                        pos.account.inputMint.equals(token) || 
-                        pos.account.outputMint.equals(token)
-                    )
-                );
-
-                console.log(`Found ${monitoredPositions.length} positions for monitored tokens`);
-
-                // Generate summary on startup and every hour
-                const currentTime = Date.now();
-                if (lastSummaryTime === 0 || currentTime - lastSummaryTime >= SUMMARY_INTERVAL) {
-                    const summaryMessage = await this.generateDcaSummary(monitoredPositions);
-                    await this.telegram.sendAlert(summaryMessage);
-                    lastSummaryTime = currentTime;
-                }
-
-                // Further filter for just LOGOS and CHAOS for detailed monitoring
-                const logosAndChaosPositions = monitoredPositions.filter(pos => 
+                // Filter for positions involving either LOGOS or CHAOS
+                const monitoredPositions = allDcaAccounts.filter((pos: ProgramDCAAccount) => 
                     pos.account.inputMint.equals(this.LOGOS) || 
                     pos.account.outputMint.equals(this.LOGOS) ||
                     pos.account.inputMint.equals(this.CHAOS) ||
                     pos.account.outputMint.equals(this.CHAOS)
                 );
 
+                // Create a map of current positions
                 const currentPositions = new Map(
-                    logosAndChaosPositions.map(pos => [pos.publicKey.toString(), pos])
+                    monitoredPositions.map(pos => [pos.publicKey.toString(), pos])
                 );
 
-                // Check for closed positions (LOGOS and CHAOS only)
+                // Check for closed positions
                 for (const [positionKey, oldPosition] of lastKnownPositions) {
                     if (!currentPositions.has(positionKey)) {
                         const isLogosPosition = oldPosition.account.inputMint.equals(this.LOGOS) || 
@@ -272,7 +252,7 @@ export class JupiterMonitor {
                     }
                 }
 
-                // Check for new positions (LOGOS and CHAOS only)
+                // Check for new positions
                 for (const [positionKey, pos] of currentPositions) {
                     if (!lastKnownPositions.has(positionKey)) {
                         const isLogosPosition = pos.account.inputMint.equals(this.LOGOS) || 
@@ -322,91 +302,6 @@ export class JupiterMonitor {
 
     public stop(): void {
         this.isRunning = false;
-    }
-
-    private async generateDcaSummary(positions: ProgramDCAAccount[]): Promise<string> {
-        console.log('Generating summary for', positions.length, 'positions');
-        
-        // Create a dynamic summary object initialized with our monitored tokens
-        const summary: { [key: string]: TokenSummary } = {};
-        
-        // Initialize summary for all monitored tokens
-        for (const [address, info] of Object.entries(this.TOKEN_INFO)) {
-            summary[info.symbol] = {
-                buyPositions: 0,
-                sellPositions: 0,
-                totalBuyVolume: new BN(0),
-                totalSellVolume: new BN(0)
-            };
-        }
-
-        // Process each position
-        for (const pos of positions) {
-            const inputMint = pos.account.inputMint;
-            const outputMint = pos.account.outputMint;
-            const inputInfo = await this.getTokenInfo(inputMint);
-            const outputInfo = await this.getTokenInfo(outputMint);
-
-            // Only process if both tokens are in our monitored list
-            if (inputInfo.symbol.startsWith('Unknown') || outputInfo.symbol.startsWith('Unknown')) {
-                continue;
-            }
-            
-            const remainingVolume = pos.account.inDeposited.sub(pos.account.inWithdrawn);
-            
-            // Update buy stats for output token
-            summary[outputInfo.symbol].buyPositions++;
-            summary[outputInfo.symbol].totalBuyVolume = summary[outputInfo.symbol].totalBuyVolume.add(remainingVolume);
-            
-            // Update sell stats for input token
-            summary[inputInfo.symbol].sellPositions++;
-            summary[inputInfo.symbol].totalSellVolume = summary[inputInfo.symbol].totalSellVolume.add(remainingVolume);
-        }
-
-        // Generate message
-        const summaryLines = ['📊 Jupiter DCA Summary:\n'];
-
-        // Sort tokens by total positions and filter out empty entries
-        const sortedTokens = Object.entries(summary)
-            .filter(([, data]) => data.buyPositions > 0 || data.sellPositions > 0)
-            .sort(([, a], [, b]) => 
-                (b.buyPositions + b.sellPositions) - (a.buyPositions + a.sellPositions)
-            );
-
-        for (const [token, data] of sortedTokens) {
-            let tokenMint: PublicKey | undefined;
-            const mintEntry = Object.entries(this.TOKEN_INFO)
-                .find(([, info]) => info.symbol === token);
-            
-            if (mintEntry) {
-                tokenMint = new PublicKey(mintEntry[0]);
-                
-                try {
-                    const buyVolume = await this.formatTokenAmount(data.totalBuyVolume, tokenMint);
-                    const sellVolume = await this.formatTokenAmount(data.totalSellVolume, tokenMint);
-
-                    summaryLines.push(`${token}:`);
-                    summaryLines.push(`🟢 Buy Orders: ${data.buyPositions}`);
-                    summaryLines.push(`🔴 Sell Orders: ${data.sellPositions}`);
-                    summaryLines.push(`💰 Buy Volume: ${buyVolume}`);
-                    summaryLines.push(`💰 Sell Volume: ${sellVolume}`);
-                    summaryLines.push(''); // Empty line between tokens
-                } catch (error) {
-                    console.error(`Error formatting amounts for ${token}:`, error);
-                    continue;
-                }
-            }
-        }
-
-        const finalMessage = summaryLines.join('\n');
-        console.log('Generated summary message:', finalMessage);
-        
-        // Update web interface with new summary
-        if (this.webServer) {
-            this.webServer.updateSummary(finalMessage);
-        }
-        
-        return finalMessage;
     }
 }
  ` `

@@ -1,15 +1,8 @@
 import { JupiterMonitor } from './monitor';
-import { WebServer } from './server';
-import { TelegramService } from './telegram';
 
 async function main() {
     try {
-        const telegram = new TelegramService();
-        const webServer = new WebServer(telegram);
-        const monitor = new JupiterMonitor(webServer);
-
-        // Start both services
-        webServer.start();
+        const monitor = new JupiterMonitor();
         await monitor.start();
         
         console.log('Jupiter DCA Monitor started successfully');

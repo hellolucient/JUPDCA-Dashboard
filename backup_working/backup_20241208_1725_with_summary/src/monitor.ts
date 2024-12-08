@@ -5,7 +5,6 @@ import { TelegramService } from './telegram';
 import BN from 'bn.js';
 import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import axios from 'axios';
-import { WebServer } from './server';
 
 // First cast to unknown, then to our type
 type ProgramDCAAccount = {
@@ -120,17 +119,10 @@ export class JupiterMonitor {
         'RLBxxFkseAZ4RgJH3Sqn8jXxhmGoz9jWxDNJMh8pL7a'  // RLBB
     ].map(addr => new PublicKey(addr));
 
-    constructor(private readonly webServer?: WebServer) {
+    constructor() {
         this.connection = new Connection(config.solana.rpcEndpoint);
         this.telegram = new TelegramService();
         this.dca = new DCA(this.connection);
-
-        // Forward telegram messages to web interface
-        if (webServer) {
-            this.telegram.onMessage((message) => {
-                webServer.updateMessages(message);
-            });
-        }
     }
 
     async start() {
@@ -400,12 +392,6 @@ export class JupiterMonitor {
 
         const finalMessage = summaryLines.join('\n');
         console.log('Generated summary message:', finalMessage);
-        
-        // Update web interface with new summary
-        if (this.webServer) {
-            this.webServer.updateSummary(finalMessage);
-        }
-        
         return finalMessage;
     }
 }
