@@ -1,6 +1,10 @@
 import axios from 'axios';
 import { config } from './config';
 
+interface TelegramResponse {
+    ok: boolean;
+}
+
 export class TelegramService {
     private readonly baseUrl: string;
     
@@ -10,7 +14,7 @@ export class TelegramService {
 
     async sendAlert(message: string): Promise<boolean> {
         try {
-            const response = await axios.post(`${this.baseUrl}/sendMessage`, {
+            const response = await axios.post<TelegramResponse>(`${this.baseUrl}/sendMessage`, {
                 chat_id: config.telegram.chatId,
                 text: message,
                 parse_mode: 'HTML'

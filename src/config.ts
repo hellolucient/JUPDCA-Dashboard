@@ -1,5 +1,16 @@
 import * as dotenv from 'dotenv';
-dotenv.config();
+import * as path from 'path';
+
+// Try to load from project root
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
+
+// Debug logging
+console.log('Current directory:', __dirname);
+console.log('Environment variables loaded:', {
+    TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN ? 'exists' : 'missing',
+    TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID ? 'exists' : 'missing',
+    SOLANA_RPC_ENDPOINT: process.env.SOLANA_RPC_ENDPOINT ? 'exists' : 'missing'
+});
 
 if (!process.env.TELEGRAM_BOT_TOKEN || 
     !process.env.TELEGRAM_CHAT_ID || 

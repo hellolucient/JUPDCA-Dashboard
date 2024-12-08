@@ -25,6 +25,21 @@ type ProgramDCAAccount = {
     };
 };
 
+// Add these interfaces near the top of the file, after the imports
+interface JupiterTokenInfo {
+    [key: string]: {
+        symbol: string;
+        decimals: number;
+    };
+}
+
+interface SolscanTokenResponse {
+    data: {
+        symbol: string;
+        decimals: string | number;
+    };
+}
+
 export class JupiterMonitor {
     private connection: Connection;
     private telegram: TelegramService;
@@ -99,23 +114,19 @@ export class JupiterMonitor {
     private async getTokenMetadata(mintAddress: PublicKey): Promise<string> {
         const address = mintAddress.toString();
         
-        // Check cache first
         if (this.tokenNameCache.has(address)) {
             return this.tokenNameCache.get(address)!;
         }
 
         try {
-            // Try Jupiter token list
-            const response = await axios.get('https://token.jup.ag/strict');
-            const tokens = response.data as { [key: string]: { symbol: string, decimals: number } };
+            const response = await axios.get<JupiterTokenInfo>('https://token.jup.ag/strict');
             
-            if (tokens[address]) {
-                const symbol = tokens[address].symbol;
+            if (response.data[address]) {
+                const symbol = response.data[address].symbol;
                 this.tokenNameCache.set(address, symbol);
                 return symbol;
             }
 
-            // Fallback to known tokens or shortened address
             return this.TOKEN_INFO[address]?.symbol || 
                    `Unknown (${address.slice(0, 4)}...${address.slice(-4)})`;
         } catch (error) {
@@ -128,27 +139,29 @@ export class JupiterMonitor {
     private async getTokenInfo(mintAddress: PublicKey): Promise<{ symbol: string, decimals: number }> {
         const address = mintAddress.toString();
         
-        // Check our known tokens first for quick response
         if (this.TOKEN_INFO[address]) {
             return this.TOKEN_INFO[address];
         }
 
         try {
-            // Try Solscan API
-            const response = await axios.get(`https://api.solscan.io/token/meta?token=${address}`, {
-                headers: {
-                    'Accept': 'application/json',
-                    'User-Agent': 'Mozilla/5.0'
+            const response = await axios.get<SolscanTokenResponse>(
+                `https://api.solscan.io/token/meta?token=${address}`,
+                {
+                    headers: {
+                        'Accept': 'application/json',
+                        'User-Agent': 'Mozilla/5.0'
+                    }
                 }
-            });
+            );
 
             if (response.data?.data?.symbol && response.data?.data?.decimals !== undefined) {
                 const tokenInfo = {
                     symbol: response.data.data.symbol,
-                    decimals: parseInt(response.data.data.decimals)
+                    decimals: typeof response.data.data.decimals === 'string' 
+                        ? parseInt(response.data.data.decimals)
+                        : response.data.data.decimals
                 };
                 
-                // Cache it in our TOKEN_INFO for future use
                 this.TOKEN_INFO[address] = tokenInfo;
                 return tokenInfo;
             }
