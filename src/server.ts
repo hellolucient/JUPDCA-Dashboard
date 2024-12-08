@@ -1,15 +1,18 @@
 import express from 'express';
 import path from 'path';
 import { TelegramService } from './telegram';
+import { StorageService, TokenSnapshot } from './storage';
 
 export class WebServer {
     private app = express();
     private port = process.env.PORT || 3000;
     private messageHistory: string[] = [];
     private latestSummary: string = '';
+    private storage: StorageService;
 
     constructor(private telegram: TelegramService) {
         this.setupServer();
+        this.storage = new StorageService();
     }
 
     private setupServer() {
@@ -24,6 +27,13 @@ export class WebServer {
         this.app.get('/api/summary', (_, res) => {
             res.json(this.latestSummary);
         });
+
+        this.app.get('/api/historical', (_, res) => {
+            res.json({
+                LOGOS: this.storage.getHistory('LOGOS'),
+                CHAOS: this.storage.getHistory('CHAOS')
+            });
+        });
     }
 
     public updateMessages(message: string) {
@@ -36,6 +46,10 @@ export class WebServer {
 
     public updateSummary(summary: string) {
         this.latestSummary = summary;
+    }
+
+    public storeSnapshot(token: 'LOGOS' | 'CHAOS', snapshot: TokenSnapshot) {
+        this.storage.addSnapshot(token, snapshot);
     }
 
     public start() {

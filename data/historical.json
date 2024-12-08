@@ -1,0 +1,132 @@
+{
+  "LOGOS": [
+    {
+      "timestamp": 1733676036970,
+      "buyOrders": 0,
+      "sellOrders": 2,
+      "buyVolume": 0,
+      "sellVolume": 4961207931772
+    },
+    {
+      "timestamp": 1733676146276,
+      "buyOrders": 0,
+      "sellOrders": 2,
+      "buyVolume": 0,
+      "sellVolume": 4961207931772
+    },
+    {
+      "timestamp": 1733676265390,
+      "buyOrders": 0,
+      "sellOrders": 2,
+      "buyVolume": 0,
+      "sellVolume": 4961207931772
+    },
+    {
+      "timestamp": 1733676412304,
+      "buyOrders": 0,
+      "sellOrders": 2,
+      "buyVolume": 0,
+      "sellVolume": 4961207931772
+    },
+    {
+      "timestamp": 1733676536249,
+      "buyOrders": 0,
+      "sellOrders": 2,
+      "buyVolume": 0,
+      "sellVolume": 4961207931772
+    },
+    {
+      "timestamp": 1733676702981,
+      "buyOrders": 0,
+      "sellOrders": 2,
+      "buyVolume": 0,
+      "sellVolume": 4961207931772
+    },
+    {
+      "timestamp": 1733676926377,
+      "buyOrders": 0,
+      "sellOrders": 2,
+      "buyVolume": 0,
+      "sellVolume": 4961207931772
+    },
+    {
+      "timestamp": 1733677084906,
+      "buyOrders": 0,
+      "sellOrders": 2,
+      "buyVolume": 0,
+      "sellVolume": 4961207931772
+    },
+    {
+      "timestamp": 1733677160378,
+      "buyOrders": 0,
+      "sellOrders": 2,
+      "buyVolume": 0,
+      "sellVolume": 4961207931772
+    }
+  ],
+  "CHAOS": [
+    {
+      "timestamp": 1733676036970,
+      "buyOrders": 5,
+      "sellOrders": 107,
+      "buyVolume": 24055000000,
+      "sellVolume": 79267714172117
+    },
+    {
+      "timestamp": 1733676146276,
+      "buyOrders": 5,
+      "sellOrders": 107,
+      "buyVolume": 24055000000,
+      "sellVolume": 79267714172117
+    },
+    {
+      "timestamp": 1733676265390,
+      "buyOrders": 5,
+      "sellOrders": 107,
+      "buyVolume": 24055000000,
+      "sellVolume": 79267714172117
+    },
+    {
+      "timestamp": 1733676412304,
+      "buyOrders": 5,
+      "sellOrders": 107,
+      "buyVolume": 24055000000,
+      "sellVolume": 79267714172117
+    },
+    {
+      "timestamp": 1733676536249,
+      "buyOrders": 5,
+      "sellOrders": 107,
+      "buyVolume": 24055000000,
+      "sellVolume": 79267714172117
+    },
+    {
+      "timestamp": 1733676702981,
+      "buyOrders": 5,
+      "sellOrders": 107,
+      "buyVolume": 24055000000,
+      "sellVolume": 79267714172117
+    },
+    {
+      "timestamp": 1733676926377,
+      "buyOrders": 5,
+      "sellOrders": 107,
+      "buyVolume": 24055000000,
+      "sellVolume": 79267714172117
+    },
+    {
+      "timestamp": 1733677084906,
+      "buyOrders": 5,
+      "sellOrders": 107,
+      "buyVolume": 24055000000,
+      "sellVolume": 79267714172117
+    },
+    {
+      "timestamp": 1733677160378,
+      "buyOrders": 5,
+      "sellOrders": 107,
+      "buyVolume": 24055000000,
+      "sellVolume": 79267714172117
+    }
+  ]
+}

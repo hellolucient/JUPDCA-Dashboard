@@ -401,6 +401,33 @@ export class JupiterMonitor {
         const finalMessage = summaryLines.join('\n');
         console.log('Generated summary message:', finalMessage);
         
+        // Store snapshots for LOGOS and CHAOS
+        if (this.webServer) {
+            const now = Date.now();
+            
+            // Store LOGOS snapshot
+            if (summary['LOGOS']) {
+                this.webServer.storeSnapshot('LOGOS', {
+                    timestamp: now,
+                    buyOrders: summary['LOGOS'].buyPositions,
+                    sellOrders: summary['LOGOS'].sellPositions,
+                    buyVolume: summary['LOGOS'].totalBuyVolume.toNumber(),
+                    sellVolume: summary['LOGOS'].totalSellVolume.toNumber()
+                });
+            }
+
+            // Store CHAOS snapshot
+            if (summary['CHAOS']) {
+                this.webServer.storeSnapshot('CHAOS', {
+                    timestamp: now,
+                    buyOrders: summary['CHAOS'].buyPositions,
+                    sellOrders: summary['CHAOS'].sellPositions,
+                    buyVolume: summary['CHAOS'].totalBuyVolume.toNumber(),
+                    sellVolume: summary['CHAOS'].totalSellVolume.toNumber()
+                });
+            }
+        }
+        
         // Update web interface with new summary
         if (this.webServer) {
             this.webServer.updateSummary(finalMessage);
