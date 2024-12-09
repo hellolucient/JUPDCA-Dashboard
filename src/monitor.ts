@@ -48,6 +48,14 @@ interface TokenSummary {
     totalSellVolume: BN;
 }
 
+interface TokenSnapshot {
+    timestamp: number;
+    buyOrders: number;
+    sellOrders: number;
+    buyVolume: number;
+    sellVolume: number;
+}
+
 export class JupiterMonitor {
     private connection: Connection;
     private telegram: TelegramService;
@@ -198,28 +206,50 @@ export class JupiterMonitor {
 
     private async formatTokenAmount(amount: BN, mintAddress: PublicKey): Promise<string> {
         const { decimals } = await this.getTokenInfo(mintAddress);
-        const value = amount.toNumber();
-        const factor = Math.pow(10, decimals);
-        const formatted = value / factor;
         
-        // Format with commas for thousands and handle decimals
-        return formatted.toLocaleString('en-US', {
-            minimumFractionDigits: 0,
-            maximumFractionDigits: 2  // Always show max 2 decimal places
-        });
+        // Create BN for the decimal factor
+        const factor = new BN(10).pow(new BN(decimals));
+        
+        // Perform division in BN
+        const wholePart = amount.div(factor);
+        const fractionalPart = amount.mod(factor);
+        
+        // Convert to string and handle formatting
+        let result = wholePart.toString();
+        
+        // Add commas for thousands
+        result = result.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+        
+        // Only add fractional part if it's non-zero
+        if (!fractionalPart.isZero()) {
+            // Convert fractional part to string and pad with leading zeros
+            let fractionalStr = fractionalPart.toString().padStart(decimals, '0');
+            // Remove trailing zeros
+            fractionalStr = fractionalStr.replace(/0+$/, '');
+            // Only add if there's something left after removing trailing zeros
+            if (fractionalStr.length > 0) {
+                result += '.' + fractionalStr;
+            }
+        }
+        
+        return result;
     }
 
     private async pollDcaPositions() {
         let lastKnownPositions = new Map<string, ProgramDCAAccount>();
         let lastSummaryTime = 0;
-        const SUMMARY_INTERVAL = 3600000; // 1 hour in milliseconds
+        const SUMMARY_INTERVAL = 60000; // Generate summary every minute
 
         while (this.isRunning) {
             try {
+                console.log('📊 Fetching DCA positions...');
+                const startTime = Date.now();
+                
                 const allDcaAccounts = (await this.dca.getAll()) as ProgramDCAAccount[];
-                console.log(`Found ${allDcaAccounts.length} total DCA positions`);
+                
+                console.log(`✅ Found ${allDcaAccounts.length} total DCA positions in ${Date.now() - startTime}ms`);
 
-                // First filter for all monitored tokens
+                // First filter for all monitored tokens for summary
                 const monitoredPositions = allDcaAccounts.filter(pos => 
                     this.MONITORED_TOKENS.some(token => 
                         pos.account.inputMint.equals(token) || 
@@ -229,22 +259,24 @@ export class JupiterMonitor {
 
                 console.log(`Found ${monitoredPositions.length} positions for monitored tokens`);
 
-                // Generate summary on startup and every hour
+                // Generate summary on startup and every minute
                 const currentTime = Date.now();
                 if (lastSummaryTime === 0 || currentTime - lastSummaryTime >= SUMMARY_INTERVAL) {
+                    console.log('Generating new summary...');
                     const summaryMessage = await this.generateDcaSummary(monitoredPositions);
                     await this.telegram.sendAlert(summaryMessage);
                     lastSummaryTime = currentTime;
                 }
 
-                // Further filter for just LOGOS and CHAOS for detailed monitoring
+                // Filter for just LOGOS and CHAOS positions for detailed monitoring
                 const logosAndChaosPositions = monitoredPositions.filter(pos => 
                     pos.account.inputMint.equals(this.LOGOS) || 
                     pos.account.outputMint.equals(this.LOGOS) ||
-                    pos.account.inputMint.equals(this.CHAOS) ||
+                    pos.account.inputMint.equals(this.CHAOS) || 
                     pos.account.outputMint.equals(this.CHAOS)
                 );
 
+                // Create a map of current LOGOS/CHAOS positions
                 const currentPositions = new Map(
                     logosAndChaosPositions.map(pos => [pos.publicKey.toString(), pos])
                 );
@@ -309,11 +341,25 @@ export class JupiterMonitor {
                     }
                 }
 
-                // Update lastKnownPositions
+                // Update last known positions for next iteration
                 lastKnownPositions = currentPositions;
 
             } catch (error) {
-                console.error('Error polling DCA positions:', error);
+                console.error('Error in DCA monitor:', error);
+                
+                // Log detailed error information
+                if (error instanceof Error) {
+                    console.error({
+                        message: error.message,
+                        stack: error.stack,
+                        timestamp: new Date().toISOString()
+                    });
+                } else {
+                    console.error({
+                        message: String(error),
+                        timestamp: new Date().toISOString()
+                    });
+                }
             }
 
             await new Promise(resolve => setTimeout(resolve, 10000));
@@ -331,8 +377,9 @@ export class JupiterMonitor {
         const summary: { [key: string]: TokenSummary } = {};
         
         // Initialize summary for all monitored tokens
-        for (const [address, info] of Object.entries(this.TOKEN_INFO)) {
-            summary[info.symbol] = {
+        for (const token of this.MONITORED_TOKENS) {
+            const tokenInfo = await this.getTokenInfo(token);
+            summary[tokenInfo.symbol] = {
                 buyPositions: 0,
                 sellPositions: 0,
                 totalBuyVolume: new BN(0),
@@ -342,98 +389,69 @@ export class JupiterMonitor {
 
         // Process each position
         for (const pos of positions) {
-            const inputMint = pos.account.inputMint;
-            const outputMint = pos.account.outputMint;
-            const inputInfo = await this.getTokenInfo(inputMint);
-            const outputInfo = await this.getTokenInfo(outputMint);
+            // Find which monitored token this position is for
+            const monitoredToken = this.MONITORED_TOKENS.find(token => 
+                pos.account.inputMint.equals(token) || pos.account.outputMint.equals(token)
+            );
 
-            // Only process if both tokens are in our monitored list
-            if (inputInfo.symbol.startsWith('Unknown') || outputInfo.symbol.startsWith('Unknown')) {
-                continue;
+            if (!monitoredToken) continue;
+
+            const tokenInfo = await this.getTokenInfo(monitoredToken);
+            const tokenSymbol = tokenInfo.symbol;
+            
+            const isBuyingToken = pos.account.outputMint.equals(monitoredToken);
+            const volume = pos.account.inDeposited.sub(pos.account.inWithdrawn);
+
+            if (isBuyingToken) {
+                summary[tokenSymbol].buyPositions++;
+                summary[tokenSymbol].totalBuyVolume = summary[tokenSymbol].totalBuyVolume.add(volume);
+            } else {
+                summary[tokenSymbol].sellPositions++;
+                summary[tokenSymbol].totalSellVolume = summary[tokenSymbol].totalSellVolume.add(volume);
             }
-            
-            const remainingVolume = pos.account.inDeposited.sub(pos.account.inWithdrawn);
-            
-            // Update buy stats for output token
-            summary[outputInfo.symbol].buyPositions++;
-            summary[outputInfo.symbol].totalBuyVolume = summary[outputInfo.symbol].totalBuyVolume.add(remainingVolume);
-            
-            // Update sell stats for input token
-            summary[inputInfo.symbol].sellPositions++;
-            summary[inputInfo.symbol].totalSellVolume = summary[inputInfo.symbol].totalSellVolume.add(remainingVolume);
         }
 
         // Generate message
-        const summaryLines = ['📊 Jupiter DCA Summary:\n'];
+        const summaryLines = ['📊 DCA Position Summary:'];
+        
+        for (const [symbol, data] of Object.entries(summary)) {
+            if (data.buyPositions > 0 || data.sellPositions > 0) {
+                const buyVolume = await this.formatTokenAmount(data.totalBuyVolume, new PublicKey(this.MONITORED_TOKENS.find(token => 
+                    this.TOKEN_INFO[token.toString()]?.symbol === symbol
+                )!));
+                const sellVolume = await this.formatTokenAmount(data.totalSellVolume, new PublicKey(this.MONITORED_TOKENS.find(token => 
+                    this.TOKEN_INFO[token.toString()]?.symbol === symbol
+                )!));
 
-        // Sort tokens by total positions and filter out empty entries
-        const sortedTokens = Object.entries(summary)
-            .filter(([, data]) => data.buyPositions > 0 || data.sellPositions > 0)
-            .sort(([, a], [, b]) => 
-                (b.buyPositions + b.sellPositions) - (a.buyPositions + a.sellPositions)
-            );
-
-        for (const [token, data] of sortedTokens) {
-            let tokenMint: PublicKey | undefined;
-            const mintEntry = Object.entries(this.TOKEN_INFO)
-                .find(([, info]) => info.symbol === token);
-            
-            if (mintEntry) {
-                tokenMint = new PublicKey(mintEntry[0]);
-                
-                try {
-                    const buyVolume = await this.formatTokenAmount(data.totalBuyVolume, tokenMint);
-                    const sellVolume = await this.formatTokenAmount(data.totalSellVolume, tokenMint);
-
-                    summaryLines.push(`${token}:`);
-                    summaryLines.push(`🟢 Buy Orders: ${data.buyPositions}`);
-                    summaryLines.push(`🔴 Sell Orders: ${data.sellPositions}`);
-                    summaryLines.push(`💰 Buy Volume: ${buyVolume}`);
-                    summaryLines.push(`💰 Sell Volume: ${sellVolume}`);
-                    summaryLines.push(''); // Empty line between tokens
-                } catch (error) {
-                    console.error(`Error formatting amounts for ${token}:`, error);
-                    continue;
-                }
+                summaryLines.push(`\n${symbol}:`);
+                summaryLines.push(`🟢 Buy Orders: ${data.buyPositions}`);
+                summaryLines.push(`💰 Buy Volume: ${buyVolume}`);
+                summaryLines.push(`🔴 Sell Orders: ${data.sellPositions}`);
+                summaryLines.push(`💰 Sell Volume: ${sellVolume}`);
             }
         }
 
-        const finalMessage = summaryLines.join('\n');
-        console.log('Generated summary message:', finalMessage);
+        const summaryText = summaryLines.join('\n');
         
-        // Store snapshots for LOGOS and CHAOS
+        // Send summary to web server
         if (this.webServer) {
-            const now = Date.now();
-            
-            // Store LOGOS snapshot
-            if (summary['LOGOS']) {
-                this.webServer.storeSnapshot('LOGOS', {
-                    timestamp: now,
-                    buyOrders: summary['LOGOS'].buyPositions,
-                    sellOrders: summary['LOGOS'].sellPositions,
-                    buyVolume: summary['LOGOS'].totalBuyVolume.toNumber(),
-                    sellVolume: summary['LOGOS'].totalSellVolume.toNumber()
-                });
-            }
+            this.webServer.updateSummary(summaryText);
+        }
 
-            // Store CHAOS snapshot
-            if (summary['CHAOS']) {
-                this.webServer.storeSnapshot('CHAOS', {
-                    timestamp: now,
-                    buyOrders: summary['CHAOS'].buyPositions,
-                    sellOrders: summary['CHAOS'].sellPositions,
-                    buyVolume: summary['CHAOS'].totalBuyVolume.toNumber(),
-                    sellVolume: summary['CHAOS'].totalSellVolume.toNumber()
-                });
-            }
+        return summaryText;
+    }
+
+    // Add helper method for calculating expected output
+    private calculateExpectedOutput(inputAmount: BN, inputDecimals: number, outputDecimals: number): BN {
+        // This is a simplified calculation - in reality we'd need price data
+        // For now, let's adjust for decimal differences
+        const decimalDiff = outputDecimals - inputDecimals;
+        if (decimalDiff > 0) {
+            return inputAmount.mul(new BN(10).pow(new BN(decimalDiff)));
+        } else if (decimalDiff < 0) {
+            return inputAmount.div(new BN(10).pow(new BN(-decimalDiff)));
         }
-        
-        // Update web interface with new summary
-        if (this.webServer) {
-            this.webServer.updateSummary(finalMessage);
-        }
-        
-        return finalMessage;
+        return inputAmount;
     }
 }
  ` `

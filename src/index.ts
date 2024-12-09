@@ -6,7 +6,10 @@ async function main() {
     try {
         const telegram = new TelegramService();
         const webServer = new WebServer(telegram);
+        console.log('WebServer initialized');
+        
         const monitor = new JupiterMonitor(webServer);
+        console.log('Monitor initialized with WebServer');
 
         // Start both services
         webServer.start();

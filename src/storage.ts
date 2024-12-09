@@ -44,16 +44,43 @@ export class StorageService {
     }
 
     addSnapshot(token: 'LOGOS' | 'CHAOS', snapshot: TokenSnapshot) {
-        // Keep last 24 hours of hourly data
-        const oneDayAgo = Date.now() - (24 * 60 * 60 * 1000);
+        console.log(`📊 Adding ${token} snapshot:`, {
+            timestamp: new Date(snapshot.timestamp).toISOString(),
+            buyOrders: snapshot.buyOrders,
+            sellOrders: snapshot.sellOrders,
+            buyVolume: snapshot.buyVolume.toLocaleString(),
+            sellVolume: snapshot.sellVolume.toLocaleString(),
+            historicalDataPoints: this.data[token].length
+        });
+
+        // Keep last 7 days of hourly data
+        const oneWeekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
         this.data[token] = [
-            ...this.data[token].filter(s => s.timestamp > oneDayAgo),
+            ...this.data[token].filter(s => s.timestamp > oneWeekAgo),
             snapshot
         ];
+
+        console.log(`📈 Historical data for ${token}:`, {
+            totalDataPoints: this.data[token].length,
+            oldestPoint: new Date(this.data[token][0].timestamp).toISOString(),
+            newestPoint: new Date(this.data[token][this.data[token].length - 1].timestamp).toISOString()
+        });
+
         this.saveData();
     }
 
-    getHistory(token: 'LOGOS' | 'CHAOS'): TokenSnapshot[] {
-        return this.data[token];
+    getHistory(token: 'LOGOS' | 'CHAOS', period: 'daily' | 'weekly' = 'daily'): TokenSnapshot[] {
+        const data = this.data[token];
+        const now = Date.now();
+
+        if (period === 'daily') {
+            // Last 24 hours of data
+            const oneDayAgo = now - (24 * 60 * 60 * 1000);
+            return data.filter(s => s.timestamp > oneDayAgo);
+        } else {
+            // Last 7 days of data
+            const oneWeekAgo = now - (7 * 24 * 60 * 60 * 1000);
+            return data.filter(s => s.timestamp > oneWeekAgo);
+        }
     }
 } 
